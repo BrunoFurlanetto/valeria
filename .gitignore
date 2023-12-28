@@ -130,6 +130,7 @@ pip-selfcheck.json
 
 
 data_audio/
+data
 .idea
 .env
 venv
