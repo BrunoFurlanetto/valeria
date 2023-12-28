@@ -13,10 +13,13 @@ class MFCC(nn.Module):
         self.fft_size = fft_size
         self.num_filt = num_filt
         self.num_coeffs = num_coeffs
-        self.mfcc = lambda x: mfcc_spec(
+        self.mfcc = self.compute_mfcc
+
+    def compute_mfcc(self, x):
+        return torch.Tensor(mfcc_spec(
             x, self.sample_rate, self.window_stride,
             self.fft_size, self.num_filt, self.num_coeffs
-        )
+        ))
 
     def forward(self, x):
         return torch.Tensor(self.mfcc(x.squeeze(0).numpy())).transpose(0, 1).unsqueeze(0)
