@@ -3,6 +3,7 @@ import torch.nn as nn
 import torchaudio
 import pandas as pd
 from sonopy import power_spec, mel_spec, mfcc_spec, filterbanks
+from tqdm import tqdm
 
 
 class MFCC(nn.Module):
@@ -22,7 +23,8 @@ class MFCC(nn.Module):
         ))
 
     def forward(self, x):
-        return torch.Tensor(self.mfcc(x.squeeze(0).numpy())).transpose(0, 1).unsqueeze(0)
+        y = torch.Tensor(self.mfcc(x.squeeze(0).numpy())).transpose(0, 1).unsqueeze(0)
+        return y
 
 
 def get_featurizer(sample_rate):
@@ -70,6 +72,7 @@ class SpecAugment(nn.Module):
 
         if self.rate > probability:
             return self.specaug(x)
+
         return x
 
     def policy2(self, x):
@@ -111,17 +114,20 @@ class WakeWordData(torch.utils.data.Dataset):
 
         try:
             file_path = self.data.key.iloc[idx]
-            waveform, sr = torchaudio.load(file_path, normalization=False)
+            waveform, sr = torchaudio.load(file_path, normalize=False)
+            waveform = waveform.to(torch.float32)
 
-            if sr > self.sr:
+            if sr != self.sr:
                 waveform = torchaudio.transforms.Resample(sr, self.sr)(waveform)
+
+            if waveform.shape[0] > 1:
+                waveform = torch.mean(waveform, dim=0, keepdim=True)
 
             mfcc = self.audio_transform(waveform)
             label = self.data.label.iloc[idx]
         except Exception as e:
-            print(str(e), file_path)
-
-            return self.__getitem__(torch.randint(0, len(self), (1,)))
+            print(f"Error loading or processing audio: {str(e)} - File: {file_path}")
+            raise  # Rethrow the exception
 
         return mfcc, label
 
