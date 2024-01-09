@@ -12,24 +12,24 @@ def trace(model):
 
 
 def main(args):
-    print("carregando modelo de", args.modelo_checkpoint)
-    checkpoint = torch.load(args.modelo_checkpoint, map_location=torch.device('cpu'))
+    print("Loading model", args.model_checkpoint)
+    checkpoint = torch.load(args.model_checkpoint, map_location=torch.device('cpu'))
     model = LSTMWW(**checkpoint['model_params'], device='cpu')
     model.load_state_dict(checkpoint['model_state_dict'])
 
-    print("modelo de rastreamento...")
+    print("Tracking model...")
     traced_model = trace(model)
-    print("salvando em", args.save_path)
+    print("Saving in", args.save_path)
     traced_model.save(args.save_path)
-    print("Pronto!")
+    print("Ready!")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="testando o wakeword")
-    parser.add_argument('--modelo_checkpoint', type=str, default=None, required=True,
-                        help='Checkpoint de modelo para otimizar')
+    parser = argparse.ArgumentParser(description="Testing the wake word")
+    parser.add_argument('--model_checkpoint', type=str, default=None, required=True,
+                        help='Model checkpoint to optimize')
     parser.add_argument('--save_path', type=str, default=None, required=True,
-                        help='caminho para salvar o modelo otimizado')
+                        help='Path to save the optimized model')
 
     args = parser.parse_args()
     main(args)
