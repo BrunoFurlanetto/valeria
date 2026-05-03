@@ -12,11 +12,12 @@ class AssistantConfigError(Exception):
 class AssistantConfig:
     assistant_name: str = "Valeria"
     google_api_key: str | None = None
-    gemini_model: str = "gemini-pro"
+    gemini_model: str = "gemini-2.5-flash"
     transcription_model: str = "gemini-2.5-flash"
     tts_model: str = "gemini-2.5-flash-preview-tts"
     tts_voice: str = "Kore"
     audio_output_dir: Path = Path("tmp/valeria-audio")
+    event_log_path: Path = Path("tmp/valeria-logs/events.jsonl")
     command_record_seconds: float = 5.0
     command_sample_rate: int = 16000
     tts_sample_rate: int = 24000
@@ -29,7 +30,7 @@ class AssistantConfig:
     def from_env(cls):
         cls._load_dotenv_if_available()
         assistant_name = os.getenv("VALERIA_ASSISTANT_NAME", "Valeria").strip() or "Valeria"
-        gemini_model = os.getenv("VALERIA_GEMINI_MODEL", "gemini-pro").strip() or "gemini-pro"
+        gemini_model = os.getenv("VALERIA_GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
         transcription_model = os.getenv("VALERIA_TRANSCRIPTION_MODEL", "gemini-2.5-flash").strip()
         tts_model = os.getenv("VALERIA_TTS_MODEL", "gemini-2.5-flash-preview-tts").strip()
         tts_voice = os.getenv("VALERIA_TTS_VOICE", "Kore").strip() or "Kore"

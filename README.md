@@ -8,14 +8,14 @@ Valeria is a virtual assistant developed to assist in day-to-day tasks. The curr
 
 - **CLI foundation:** Run Valeria in text mode or start the wake-word engine from `python -m app.assistant`.
 - **Wake-word runtime:** Load an optimized TorchScript model and listen for the local wake word when audio dependencies and a microphone are available.
-- **Voice V1 flow:** After wake-word detection, Valeria records a short local command, sends that audio to Gemini for transcription, generates a local assistant response, sends the response text to Gemini TTS, and plays the returned audio locally.
-- **Assistant core placeholder:** Text responses currently confirm receipt of the command. LLM-backed responses and tool integrations are planned for later V1 steps.
+- **Voice V1 flow:** After wake-word detection, Valeria records a short local command, sends that audio to Gemini for transcription, asks the assistant core for a response, sends the response text to Gemini TTS, and plays the returned audio locally.
+- **Assistant core:** `AssistantCore` uses Gemini for response generation when `GOOGLE_API_KEY` and the `google-genai` SDK are available. If Gemini is unavailable, it returns a short safe local fallback without echoing the user's input.
+- **Short-term memory and logging:** The assistant keeps a short in-memory conversation history for the current process and appends sanitized JSONL turn metadata to `tmp/valeria-logs/events.jsonl`.
 
 ## Planned capabilities
 
-- LLM-backed contextual responses.
 - Service/tool integrations for useful day-to-day tasks.
-- LLM-backed voice responses after the placeholder assistant core is replaced.
+- Richer long-running memory and operational log rotation.
 
 ## Voice mode privacy
 

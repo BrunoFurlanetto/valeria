@@ -8,17 +8,49 @@ class GeminiClientError(Exception):
 
 
 class GeminiClient:
-    def __init__(self, api_key, transcription_model, tts_model, tts_voice, tts_sample_rate=24000):
+    def __init__(
+        self,
+        api_key,
+        transcription_model,
+        tts_model,
+        tts_voice,
+        tts_sample_rate=24000,
+        chat_model="gemini-2.5-flash",
+    ):
         if not api_key:
             raise GeminiClientError("GOOGLE_API_KEY is required for voice mode.")
 
         self.api_key = api_key
+        self.chat_model = chat_model
         self.transcription_model = transcription_model
         self.tts_model = tts_model
         self.tts_voice = tts_voice
         self.tts_sample_rate = tts_sample_rate
         self._client = None
         self._types = None
+
+    def generate(self, prompt, messages):
+        client, types = self._load_sdk()
+        contents = [
+            types.Content(
+                role=self._message_role(message.get("role")),
+                parts=[types.Part.from_text(text=str(message.get("content", "")))],
+            )
+            for message in messages
+            if str(message.get("content", "")).strip()
+        ]
+        response = self._generate_content(
+            client,
+            model=self.chat_model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=prompt,
+                max_output_tokens=160,
+                temperature=0.4,
+            ),
+            operation="generation",
+        )
+        return (getattr(response, "text", None) or "").strip()
 
     def transcribe_audio(self, audio_path):
         client, types = self._load_sdk()
@@ -93,6 +125,11 @@ class GeminiClient:
             return client.models.generate_content(**kwargs)
         except Exception as exc:
             raise GeminiClientError(f"{operation} request failed.") from exc
+
+    def _message_role(self, role):
+        if role == "model":
+            return "model"
+        return "user"
 
     def _extract_audio(self, response):
         parts = list(getattr(response, "parts", []) or [])
