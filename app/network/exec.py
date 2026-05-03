@@ -1,19 +1,23 @@
-import pyaudio
 import threading
 import time
 import argparse
 import wave
-from torch.nn.functional import normalize
 import torchaudio
 import torch
 import numpy as np
-from dataset import get_featurizer
-from threading import Event
 import os
+
+try:
+    from app.network.dataset import get_featurizer
+except ModuleNotFoundError:
+    from dataset import get_featurizer
 
 
 class Listener:
     def __init__(self, sample_rate=8000, record_seconds=2):
+        import pyaudio
+
+        self.pyaudio = pyaudio
         self.chunk = 1024
         self.sample_rate = sample_rate
         self.record_seconds = record_seconds
@@ -53,7 +57,7 @@ class WakeWordEngine:
         # set the channels
         wf.setnchannels(1)
         # set the sample format
-        wf.setsampwidth(self.listener.p.get_sample_size(pyaudio.paInt16))
+        wf.setsampwidth(self.listener.p.get_sample_size(self.listener.pyaudio.paInt16))
         # set the sample rate
         wf.setframerate(8000)
         # write the frames as bytes

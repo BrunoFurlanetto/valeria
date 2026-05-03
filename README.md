@@ -1,16 +1,14 @@
-# Valéria - Virtual Assistant
+# Valeria - Virtual Assistant
 
 ## Description
 
-Valéria is a virtual assistant developed to assist in various day-to-day tasks. It was created using Python and incorporates advanced functionalities to provide an efficient and friendly experience.
+Valeria is a virtual assistant developed to assist in day-to-day tasks. The current V1 work starts from a local wake-word engine and adds a CLI foundation for text and voice flows.
 
 ## Features
 
-- **Voice Recognition:** Valéria can understand and process voice commands to perform specific actions.
-- **Smart Responses:** Utilizes advanced algorithms to generate contextually relevant responses.
+- **Voice Recognition:** Valeria can understand and process voice commands to perform specific actions.
+- **Smart Responses:** Uses LLM integration for contextual responses.
 - **Integration with Services:** Connects to APIs to provide updated information, such as weather forecasts, news, among others.
-
-[//]: # (- **Reminders and Tasks:** Helps manage your daily activities by creating reminders and to-do lists.)
 
 ## Installation
 
@@ -20,7 +18,7 @@ Valéria is a virtual assistant developed to assist in various day-to-day tasks.
 git clone https://github.com/BrunoFurlanetto/valeria.git
 ```
 
-2. Create a virtual environment (recommended):
+2. Create a virtual environment:
 
 ```bash
 python -m venv venv
@@ -28,35 +26,42 @@ python -m venv venv
 
 3. Activate the virtual environment:
 
-- On Windows:
-
 ```bash
 venv\Scripts\activate
-```
-
-- On macOS/Linux:
-
-```bash
-source venv/bin/activate
 ```
 
 4. Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+pip install -r app/requirements.txt
 ```
 
-5. Run the application:
+5. Configure environment variables:
 
 ```bash
-python main.py
+copy .env.example .env
 ```
 
-## Contributions
+6. Run text mode without microphone access:
 
-Contributions are welcome! Feel free to open issues for suggestions, report bugs, or submit pull requests.
+```bash
+python -m app.assistant text
+```
+
+7. Run wake-word mode with an optimized model:
+
+```bash
+python -m app.assistant run --model-file app/network/save_model/valeria_optimized.zip
+```
+
+## Development
+
+Run the basic test suite:
+
+```bash
+python -m pytest -q
+```
 
 ## License
-
 
 This project is licensed under the [MIT License](LICENSE).
