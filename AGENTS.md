@@ -30,6 +30,17 @@ Runs wake-word inference/demo loop.
 - Keep modules focused (data pipeline in `utils`, model/runtime in `network`).
 - Prefer explicit CLI args via `argparse` for reproducible scripts.
 
+## Ownership dos subagentes
+
+| Subagente | Ownership |
+|-----------|-----------|
+| orchestrator | Planejamento, coordenacao, branch, integracao, fechamento |
+| dev | `main.py`, `app/assistant/`, `app/network/model.py`, `app/network/training.py`, `app/network/exec.py`, `app/network/optimized_model.py`, `app/utils/` |
+| dba | `app/network/dataset.py`, `app/network/save_model/`, dados locais e contratos de persistencia |
+| qa | `tests/`, fixtures, validacao manual e automatizada |
+| security | `.env.example`, configuracao, secrets, logs, validacao de entrada, `docs/security/` |
+| reviewer | Revisao final, PR, checklist tecnico |
+
 ## Testing Guidelines
 There is no formal automated test suite yet. For now:
 - Validate training changes by running `training.py` on a small dataset split.
