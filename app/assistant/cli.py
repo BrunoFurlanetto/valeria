@@ -2,7 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from app.assistant.config import AssistantConfig
+from app.assistant.config import AssistantConfig, AssistantConfigError
 from app.assistant.core import Assistant
 
 
@@ -27,7 +27,11 @@ def build_parser():
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-    config = AssistantConfig.from_env()
+    try:
+        config = AssistantConfig.from_env()
+    except AssistantConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
 
     if args.command == "text":
         return run_text_mode(config, args.once)
@@ -35,7 +39,7 @@ def main(argv=None):
     if args.command == "run":
         if args.no_wake_word:
             return run_text_mode(config, None)
-        return run_wake_word_mode(args.model_file)
+        return run_wake_word_mode(config, args.model_file)
 
     parser.print_help()
     return 2
@@ -65,7 +69,7 @@ def run_text_mode(config, once):
         print(assistant.respond(user_input))
 
 
-def run_wake_word_mode(model_file):
+def run_wake_word_mode(config, model_file):
     if not model_file:
         print("Configuration error: --model-file is required unless --no-wake-word is used.", file=sys.stderr)
         return 2
@@ -77,31 +81,27 @@ def run_wake_word_mode(model_file):
 
     try:
         from app.network.exec import WakeWordEngine
+        from app.assistant.voice_loop import VoiceLoop
     except ImportError as exc:
-        print(f"Runtime error: wake-word dependencies are unavailable: {exc}", file=sys.stderr)
+        print(f"Runtime error: voice dependencies are unavailable: {exc}", file=sys.stderr)
         return 1
-
-    def report_prediction(prediction):
-        if prediction == 1:
-            print("Wake word detected.")
 
     try:
         engine = WakeWordEngine(str(model_path))
         print(f"Starting Valeria wake-word mode with model: {model_path}")
-        engine.run(report_prediction)
-    except (OSError, RuntimeError, ValueError) as exc:
-        print(f"Runtime error: wake-word engine could not start: {exc}", file=sys.stderr)
-        return 1
-    except Exception as exc:
-        print(f"Runtime error: unexpected wake-word startup failure: {exc}", file=sys.stderr)
-        return 1
-
-    try:
+        voice_loop = VoiceLoop(config, engine)
+        voice_loop.run()
         import threading
 
         threading.Event().wait()
     except KeyboardInterrupt:
         print()
         return 0
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"Runtime error: voice loop could not start: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Runtime error: unexpected voice startup failure: {exc}", file=sys.stderr)
+        return 1
 
     return 0

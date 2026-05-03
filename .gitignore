@@ -135,6 +135,7 @@ __pycache__/
 
 data_audio/
 data
+tmp/
 .idea
 .env
 venv
