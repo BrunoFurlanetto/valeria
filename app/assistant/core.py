@@ -14,4 +14,3 @@ class Assistant:
             f"{self.config.assistant_name} recebeu: {cleaned}. "
             "O nucleo inteligente sera conectado em uma proxima etapa."
         )
-

@@ -11,7 +11,7 @@
 **Descrição:** Assistente virtual com detecção de wake-word via LSTM + integração Google Generative AI (Gemini)
 **Stack:** Python 3.10+ · PyTorch · Google Generative AI · PyAudio
 **Repositório:** https://github.com/BrunoFurlanetto/valeria.git
-**Ambiente local:** `python main.py` (requer `GOOGLE_API_KEY` no `.env`)
+**Ambiente local:** `python -m app.assistant text` ou `python -m app.assistant run` (requer `GOOGLE_API_KEY` no `.env`)
 
 ---
 
@@ -70,7 +70,8 @@ O orchestrator sempre pergunta a branch base antes de criar qualquer branch nova
 pip install -r app/requirements.txt
 
 # Assistente (entry point principal)
-python main.py
+python -m app.assistant text
+python -m app.assistant run
 
 # Treinar modelo wake-word
 python app/network/training.py \
