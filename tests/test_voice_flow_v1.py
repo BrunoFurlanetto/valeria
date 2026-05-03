@@ -333,7 +333,8 @@ def test_missing_pyaudio_does_not_break_text_mode(monkeypatch, capsys):
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert "Valeria recebeu: ola" in captured.out
+    assert "Recebi seu pedido, mas a inteligencia online nao esta disponivel agora." in captured.out
+    assert "Valeria recebeu: ola" not in captured.out
 
 
 def test_gemini_client_extracts_audio_from_mocked_response_parts():

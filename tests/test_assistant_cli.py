@@ -11,7 +11,8 @@ def test_text_mode_once_does_not_require_microphone(capsys):
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "Valeria recebeu: ola" in captured.out
+    assert "Recebi seu pedido, mas a inteligencia online nao esta disponivel agora." in captured.out
+    assert "Valeria recebeu: ola" not in captured.out
 
 
 def test_run_requires_model_file_without_no_wake_word(capsys):
