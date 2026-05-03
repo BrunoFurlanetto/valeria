@@ -21,6 +21,15 @@ Valeria is a virtual assistant developed to assist in day-to-day tasks. The curr
 
 Voice mode uses the local microphone and speakers, but it is not fully local processing. Command audio recorded after the wake word is sent to Gemini for transcription, and assistant response text is sent to Gemini for text-to-speech. Temporary audio files are created under `tmp/valeria-audio` for each turn and removed after the turn finishes.
 
+## Model artifacts
+
+The repository intentionally keeps two small known-good wake-word artifacts under `app/network/save_model/`:
+
+- `valeria_wake.pt`: baseline checkpoint for re-exporting the wake-word model.
+- `valeria_optimized.zip`: baseline TorchScript model used by the local wake-word runtime.
+
+New training outputs and temporary runtime files are ignored by default. In particular, `app/network/temporario_ww` is treated as runtime temporary data and is not versioned.
+
 ## Installation
 
 1. Clone the repository to your local machine:

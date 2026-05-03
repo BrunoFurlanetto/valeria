@@ -136,6 +136,11 @@ __pycache__/
 data_audio/
 data
 tmp/
+app/network/temporario_ww
+app/network/temporario_ww/
+app/network/save_model/*
+!app/network/save_model/valeria_wake.pt
+!app/network/save_model/valeria_optimized.zip
 .idea
 .env
 venv

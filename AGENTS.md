@@ -8,6 +8,12 @@ Core code lives under `app/`:
 
 Repository root includes `README.md`, `Dockerfile`, and `.env` support. Model artifacts currently live in `app/network/save_model/`. Keep generated files (`.pt`, `.zip`, `__pycache__/`) out of commits unless intentionally versioned.
 
+Known-good wake-word artifacts intentionally versioned:
+- `app/network/save_model/valeria_wake.pt`: baseline training checkpoint used to re-export the runtime model.
+- `app/network/save_model/valeria_optimized.zip`: baseline TorchScript model used by the local wake-word demo/runtime.
+
+Do not commit new generated model files by default. `app/network/save_model/` is ignored except for the two known-good artifacts above. `app/network/temporario_ww` is a runtime temporary artifact and must remain untracked.
+
 ## Build, Test, and Development Commands
 Use Python 3.10+ with a virtual environment:
 
@@ -40,6 +46,19 @@ Runs wake-word inference/demo loop.
 | qa | `tests/`, fixtures, validacao manual e automatizada |
 | security | `.env.example`, configuracao, secrets, logs, validacao de entrada, `docs/security/` |
 | reviewer | Revisao final, PR, checklist tecnico |
+
+## Identidades operacionais dos subagentes
+
+Ao delegar trabalho, usar estes nomes no prompt e nos registros de sessao:
+
+| Subagente | Nome operacional |
+|-----------|------------------|
+| orchestrator | Rafael Santos |
+| dev | Lucas Mendes |
+| dba | Carla Souza |
+| qa | Rafael Costa |
+| security | Ana Ferreira |
+| reviewer | Pedro Alves |
 
 ## Testing Guidelines
 There is no formal automated test suite yet. For now:
