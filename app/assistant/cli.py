@@ -81,14 +81,20 @@ def run_wake_word_mode(model_file):
         print(f"Runtime error: wake-word dependencies are unavailable: {exc}", file=sys.stderr)
         return 1
 
-    engine = WakeWordEngine(str(model_path))
-
     def report_prediction(prediction):
         if prediction == 1:
             print("Wake word detected.")
 
-    print(f"Starting Valeria wake-word mode with model: {model_path}")
-    engine.run(report_prediction)
+    try:
+        engine = WakeWordEngine(str(model_path))
+        print(f"Starting Valeria wake-word mode with model: {model_path}")
+        engine.run(report_prediction)
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"Runtime error: wake-word engine could not start: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Runtime error: unexpected wake-word startup failure: {exc}", file=sys.stderr)
+        return 1
 
     try:
         import threading
@@ -99,4 +105,3 @@ def run_wake_word_mode(model_file):
         return 0
 
     return 0
-

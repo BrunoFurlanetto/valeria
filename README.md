@@ -4,11 +4,17 @@
 
 Valeria is a virtual assistant developed to assist in day-to-day tasks. The current V1 work starts from a local wake-word engine and adds a CLI foundation for text and voice flows.
 
-## Features
+## Current V1 status
 
-- **Voice Recognition:** Valeria can understand and process voice commands to perform specific actions.
-- **Smart Responses:** Uses LLM integration for contextual responses.
-- **Integration with Services:** Connects to APIs to provide updated information, such as weather forecasts, news, among others.
+- **CLI foundation:** Run Valeria in text mode or start the wake-word engine from `python -m app.assistant`.
+- **Wake-word runtime:** Load an optimized TorchScript model and listen for the local wake word when audio dependencies and a microphone are available.
+- **Assistant core placeholder:** Text responses currently confirm receipt of the command. LLM-backed responses and tool integrations are planned for later V1 steps.
+
+## Planned capabilities
+
+- LLM-backed contextual responses.
+- Service/tool integrations for useful day-to-day tasks.
+- A fuller voice flow after wake-word detection.
 
 ## Installation
 
