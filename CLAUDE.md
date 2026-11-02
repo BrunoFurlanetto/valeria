@@ -103,7 +103,7 @@ Sem suite formal ainda. Validação manual:
 
 | Agente | Pode criar/editar | Somente leitura |
 |--------|------------------|-----------------|
-| `dev` | `main.py`, `app/network/model.py`, `app/network/training.py`, `app/network/exec.py`, `app/network/optimized_model.py`, `app/utils/` | `app/network/dataset.py`, `app/network/save_model/` |
+| `dev` | `main.py`, `app/assistant/`, `scripts/`, `app/network/model.py`, `app/network/training.py`, `app/network/exec.py`, `app/network/optimized_model.py`, `app/utils/`, `.env.example`, `app/requirements.txt`, `CLAUDE.md`, `README.md`, `Dockerfile` | `app/network/dataset.py`, `app/network/save_model/` |
 | `dba` | `app/network/dataset.py`, `app/network/save_model/` | todo o resto |
 | `qa` | `tests/` | todo código de produção |
 | `security` | `docs/security/` | todo o codebase |
