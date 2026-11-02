@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from app.assistant.config import AssistantConfig
 from app.assistant.event_logger import EventLogger
-from app.assistant.gemini_client import GeminiClient, GeminiClientError
+from app.assistant.groq_chat_client import GroqChatClient, ChatClientError
 from app.assistant.prompts import VALERIA_PERSONA_PROMPT
 
 
@@ -18,12 +18,12 @@ class AssistantCore:
     def __init__(
         self,
         config: AssistantConfig,
-        gemini_client=None,
+        chat_client=None,
         event_logger=None,
         max_history_messages=6,
     ):
         self.config = config
-        self.gemini_client = gemini_client or self._build_gemini_client()
+        self.chat_client = chat_client or self._build_chat_client()
         self.event_logger = event_logger or EventLogger(config.event_log_path)
         self.max_history_messages = max(2, int(max_history_messages))
         self.history = []
@@ -36,23 +36,26 @@ class AssistantCore:
             self._log_turn(started, cleaned, response, fallback=True, error_type="empty_input")
             return response
 
-        if self.gemini_client is None:
-            response = self._fallback_response("gemini_unavailable", cleaned)
+        if self.chat_client is None:
+            response = self._fallback_response("groq_unavailable")
             self._remember(cleaned, response.text)
-            self._log_turn(started, cleaned, response, fallback=True, error_type="gemini_unavailable")
+            self._log_turn(started, cleaned, response, fallback=True, error_type="groq_unavailable")
             return response
 
         messages = [*self.history, {"role": "user", "content": cleaned}]
         try:
-            generated = self.gemini_client.generate(VALERIA_PERSONA_PROMPT, messages).strip()
-        except GeminiClientError:
-            response = self._fallback_response("gemini_error", cleaned)
+            generated, model_used, tokens_used = self.chat_client.generate_with_metadata(
+                VALERIA_PERSONA_PROMPT, messages
+            )
+        except ChatClientError:
+            response = self._fallback_response("groq_error")
             self._remember(cleaned, response.text)
-            self._log_turn(started, cleaned, response, fallback=True, error_type="gemini_error")
+            self._log_turn(started, cleaned, response, fallback=True, error_type="groq_error")
             return response
 
+        generated = generated.strip()
         if not generated:
-            response = self._fallback_response("empty_response", cleaned)
+            response = self._fallback_response("empty_response")
             self._remember(cleaned, response.text)
             self._log_turn(started, cleaned, response, fallback=True, error_type="empty_response")
             return response
@@ -61,44 +64,43 @@ class AssistantCore:
             text=self._compact_for_voice(generated),
             tool_calls=[],
             metadata={
-                "model": self.config.gemini_model,
+                "model": model_used,
                 "fallback": False,
                 "latency_ms": self._latency_ms(started),
+                "tokens_used": tokens_used,
             },
         )
         self._remember(cleaned, response.text)
         self._log_turn(started, cleaned, response, fallback=False)
         return response
 
-    def _build_gemini_client(self):
-        if not self.config.google_api_key:
+    def _build_chat_client(self):
+        if not self.config.groq_api_key:
             return None
         try:
-            return GeminiClient(
-                api_key=self.config.google_api_key,
-                transcription_model=self.config.transcription_model,
-                tts_model=self.config.tts_model,
-                tts_voice=self.config.tts_voice,
-                tts_sample_rate=self.config.tts_sample_rate,
-                chat_model=self.config.gemini_model,
+            return GroqChatClient(
+                api_key=self.config.groq_api_key,
+                chat_model=self.config.groq_chat_model,
+                fallback_model=self.config.groq_chat_fallback_model,
             )
-        except GeminiClientError:
+        except ChatClientError:
             return None
 
-    def _fallback_response(self, reason, user_text=None):
+    def _fallback_response(self, reason):
         text_by_reason = {
             "empty_input": "Pode repetir o que voce precisa?",
             "empty_response": "Recebi seu pedido, mas a inteligencia online nao esta disponivel agora.",
-            "gemini_error": "Recebi seu pedido, mas a inteligencia online nao esta disponivel agora.",
-            "gemini_unavailable": "Recebi seu pedido, mas a inteligencia online nao esta disponivel agora.",
+            "groq_error": "Recebi seu pedido, mas a inteligencia online nao esta disponivel agora.",
+            "groq_unavailable": "Recebi seu pedido, mas a inteligencia online nao esta disponivel agora.",
         }
         return AssistantResponse(
-            text=text_by_reason.get(reason, text_by_reason["gemini_error"]),
+            text=text_by_reason.get(reason, text_by_reason["groq_error"]),
             tool_calls=[],
             metadata={
-                "model": self.config.gemini_model,
+                "model": self.config.groq_chat_model,
                 "fallback": True,
                 "error_type": reason,
+                "tokens_used": None,
             },
         )
 
@@ -106,7 +108,7 @@ class AssistantCore:
         self.history.extend(
             [
                 {"role": "user", "content": user_text},
-                {"role": "model", "content": assistant_text},
+                {"role": "assistant", "content": assistant_text},
             ]
         )
         self.history = self.history[-self.max_history_messages :]
@@ -121,10 +123,11 @@ class AssistantCore:
             {
                 "event": "assistant.respond",
                 "status": "fallback" if fallback else "ok",
-                "model": metadata.get("model", self.config.gemini_model),
+                "model": metadata.get("model", self.config.groq_chat_model),
                 "fallback": fallback,
                 "error_type": error_type or metadata.get("error_type"),
                 "latency_ms": self._latency_ms(started),
+                "tokens_used": metadata.get("tokens_used"),
                 "input_length": len(user_text),
                 "response_length": len(response.text),
                 "history_size": len(self.history),
