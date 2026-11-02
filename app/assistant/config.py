@@ -11,11 +11,19 @@ class AssistantConfigError(Exception):
 @dataclass(frozen=True)
 class AssistantConfig:
     assistant_name: str = "Valeria"
-    google_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
-    transcription_model: str = "gemini-2.5-flash"
-    tts_model: str = "gemini-2.5-flash-preview-tts"
-    tts_voice: str = "Kore"
+
+    # Groq — chat e STT
+    groq_api_key: str | None = None
+    groq_chat_model: str = "openai/gpt-oss-20b"
+    groq_chat_fallback_model: str = "qwen/qwen3-32b"
+    groq_stt_model: str = "whisper-large-v3-turbo"
+
+    # ElevenLabs — TTS
+    elevenlabs_api_key: str | None = None
+    elevenlabs_voice_id: str | None = None
+    elevenlabs_model: str = "eleven_flash_v2_5"
+
+    # Audio local
     audio_output_dir: Path = Path("tmp/valeria-audio")
     event_log_path: Path = Path("tmp/valeria-logs/events.jsonl")
     command_record_seconds: float = 5.0
@@ -30,10 +38,30 @@ class AssistantConfig:
     def from_env(cls):
         cls._load_dotenv_if_available()
         assistant_name = os.getenv("VALERIA_ASSISTANT_NAME", "Valeria").strip() or "Valeria"
-        gemini_model = os.getenv("VALERIA_GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
-        transcription_model = os.getenv("VALERIA_TRANSCRIPTION_MODEL", "gemini-2.5-flash").strip()
-        tts_model = os.getenv("VALERIA_TTS_MODEL", "gemini-2.5-flash-preview-tts").strip()
-        tts_voice = os.getenv("VALERIA_TTS_VOICE", "Kore").strip() or "Kore"
+
+        # Groq
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        groq_chat_model = (
+            os.getenv("VALERIA_GROQ_CHAT_MODEL", "openai/gpt-oss-20b").strip()
+            or "openai/gpt-oss-20b"
+        )
+        groq_chat_fallback_model = (
+            os.getenv("VALERIA_GROQ_CHAT_FALLBACK_MODEL", "qwen/qwen3-32b").strip()
+            or "qwen/qwen3-32b"
+        )
+        groq_stt_model = (
+            os.getenv("VALERIA_GROQ_STT_MODEL", "whisper-large-v3-turbo").strip()
+            or "whisper-large-v3-turbo"
+        )
+
+        # ElevenLabs
+        elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY")
+        elevenlabs_voice_id = os.getenv("ELEVENLABS_VOICE_ID")
+        elevenlabs_model = (
+            os.getenv("VALERIA_ELEVENLABS_MODEL", "eleven_flash_v2_5").strip()
+            or "eleven_flash_v2_5"
+        )
+
         audio_output_dir = cls._audio_dir_from_env()
         command_record_seconds = cls._float_from_env(
             "VALERIA_COMMAND_RECORD_SECONDS",
@@ -56,11 +84,13 @@ class AssistantConfig:
 
         return cls(
             assistant_name=assistant_name,
-            google_api_key=os.getenv("GOOGLE_API_KEY"),
-            gemini_model=gemini_model,
-            transcription_model=transcription_model or "gemini-2.5-flash",
-            tts_model=tts_model or "gemini-2.5-flash-preview-tts",
-            tts_voice=tts_voice,
+            groq_api_key=groq_api_key,
+            groq_chat_model=groq_chat_model,
+            groq_chat_fallback_model=groq_chat_fallback_model,
+            groq_stt_model=groq_stt_model,
+            elevenlabs_api_key=elevenlabs_api_key,
+            elevenlabs_voice_id=elevenlabs_voice_id,
+            elevenlabs_model=elevenlabs_model,
             audio_output_dir=audio_output_dir,
             command_record_seconds=command_record_seconds,
             command_sample_rate=command_sample_rate,
