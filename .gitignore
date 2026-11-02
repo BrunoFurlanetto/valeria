@@ -126,6 +126,9 @@ fabric.properties
 [Ll]ib64
 [Ll]ocal
 [Ss]cripts
+# Exceptions: project scripts directory (not venv)
+!scripts/
+!scripts/**
 pyvenv.cfg
 .venv
 pip-selfcheck.json
