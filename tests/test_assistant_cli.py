@@ -3,9 +3,14 @@ import threading
 import types
 
 from app.assistant.cli import main
+from app.assistant.config import AssistantConfig
 
 
-def test_text_mode_once_does_not_require_microphone(capsys):
+def test_text_mode_once_does_not_require_microphone(monkeypatch, capsys):
+    # Sem GROQ_API_KEY o assistente usa fallback local — sem rede
+    monkeypatch.setattr(AssistantConfig, "_load_dotenv_if_available", lambda: None)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
     exit_code = main(["text", "--once", "ola"])
 
     captured = capsys.readouterr()

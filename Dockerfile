@@ -1,5 +1,5 @@
-FROM python:3.10-slim
-LABEL manteiner='bruno.furlanetto@hotmail.com'
+FROM python:3.12-slim
+LABEL maintainer='bruno.furlanetto@hotmail.com'
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

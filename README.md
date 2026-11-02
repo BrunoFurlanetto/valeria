@@ -2,15 +2,16 @@
 
 ## Description
 
-Valeria is a virtual assistant developed to assist in day-to-day tasks. The current V1 work starts from a local wake-word engine and adds a CLI foundation for text and voice flows.
+Valeria is a virtual assistant developed to assist in day-to-day tasks. V1 uses a local wake-word engine (PyTorch LSTM) and cloud APIs for chat, transcription, and text-to-speech.
 
 ## Current V1 status
 
 - **CLI foundation:** Run Valeria in text mode or start the wake-word engine from `python -m app.assistant`.
 - **Wake-word runtime:** Load an optimized TorchScript model and listen for the local wake word when audio dependencies and a microphone are available.
-- **Voice V1 flow:** After wake-word detection, Valeria records a short local command, sends that audio to Gemini for transcription, asks the assistant core for a response, sends the response text to Gemini TTS, and plays the returned audio locally.
-- **Assistant core:** `AssistantCore` uses Gemini for response generation when `GOOGLE_API_KEY` and the `google-genai` SDK are available. If Gemini is unavailable, it returns a short safe local fallback without echoing the user's input.
-- **Short-term memory and logging:** The assistant keeps a short in-memory conversation history for the current process and appends sanitized JSONL turn metadata to `tmp/valeria-logs/events.jsonl`.
+- **Voice V1 flow:** After wake-word detection, Valeria records a short local command, sends that audio to Groq Whisper for transcription, asks the assistant core for a response, sends the response text to ElevenLabs for TTS, and plays the returned audio locally. If ElevenLabs is unavailable, a pre-generated static WAV phrase is played and the response appears in the terminal.
+- **Assistant core:** `AssistantCore` uses Groq (`openai/gpt-oss-20b` with fallback to `qwen/qwen3-32b`) for response generation when `GROQ_API_KEY` and the `groq` SDK are available. If Groq is unavailable, it returns a short safe local fallback without echoing the user's input.
+- **Static audio feedback:** Earcons and fallback phrases are pre-generated WAVs stored in `app/assistant/assets/sounds/` and played when APIs are unavailable.
+- **Short-term memory and logging:** The assistant keeps a short in-memory conversation history for the current process and appends sanitized JSONL turn metadata (including tokens used) to `tmp/valeria-logs/events.jsonl`.
 
 ## Planned capabilities
 
@@ -19,7 +20,13 @@ Valeria is a virtual assistant developed to assist in day-to-day tasks. The curr
 
 ## Voice mode privacy
 
-Voice mode uses the local microphone and speakers, but it is not fully local processing. Command audio recorded after the wake word is sent to Gemini for transcription, and assistant response text is sent to Gemini for text-to-speech. Temporary audio files are created under `tmp/valeria-audio` for each turn and removed after the turn finishes.
+Voice mode uses the local microphone and speakers, but it is not fully local processing:
+
+- Command audio recorded after the wake word is sent to **Groq Whisper** for transcription.
+- Assistant response text is sent to **ElevenLabs** for text-to-speech.
+- Temporary audio files are created under `tmp/valeria-audio` for each turn and removed after the turn finishes.
+- Wake-word detection runs fully **locally** on CPU (PyTorch LSTM, no network required).
+- If ElevenLabs is unavailable, TTS falls back to a pre-generated static WAV phrase stored locally.
 
 ## Model artifacts
 
@@ -29,6 +36,8 @@ The repository intentionally keeps two small known-good wake-word artifacts unde
 - `valeria_optimized.zip`: baseline TorchScript model used by the local wake-word runtime.
 
 New training outputs and temporary runtime files are ignored by default. In particular, `app/network/temporario_ww` is treated as runtime temporary data and is not versioned.
+
+Static audio feedback files live in `app/assistant/assets/sounds/` and are versioned as known-good assets. Regenerate them with `python scripts/generate_static_audio.py`.
 
 ## Installation
 
@@ -60,6 +69,7 @@ pip install -r app/requirements.txt
 
 ```bash
 copy .env.example .env
+# Edit .env and set GROQ_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
 ```
 
 6. Run text mode without microphone access:

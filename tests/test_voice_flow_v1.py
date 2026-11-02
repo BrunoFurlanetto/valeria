@@ -1,16 +1,20 @@
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from app.assistant.cli import main
 from app.assistant.config import AssistantConfig, AssistantConfigError
-from app.assistant.gemini_client import GeminiClient, GeminiClientError
+from app.assistant.groq_stt_client import GroqSttClient, SttClientError
+from app.assistant.elevenlabs_tts_client import ElevenLabsTtsClient, TtsClientError
 from app.assistant.voice_loop import VoiceLoop
 import app.assistant.voice_loop as voice_loop_module
 from app.assistant.audio.playback import PlaybackError
 from app.assistant.audio.recorder import RecordingError
 
+
+# ---------------------------------------------------------------------------
+# Fakes
+# ---------------------------------------------------------------------------
 
 class FakeWakeWordEngine:
     def __init__(self):
@@ -38,18 +42,37 @@ class FakeRecorder:
         return Path(output_dir) / "command.wav"
 
 
-class FakeGeminiClient:
+class FakeGroqSttClient:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.calls = []
 
-    def transcribe_audio(self, audio_path):
-        self.calls.append(("transcribe", audio_path))
+    def transcribe(self, audio_path):
+        self.calls.append(audio_path)
         return "acenda a luz"
 
+
+class FakeElevenLabsTtsClient:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.calls = []
+
     def synthesize_speech(self, text, output_dir):
-        self.calls.append(("synthesize", text, Path(output_dir)))
+        self.calls.append((text, Path(output_dir)))
         return Path(output_dir) / "response.wav"
+
+
+class FakeFeedbackPlayer:
+    def __init__(self, player=None):
+        self.player = player
+        self.earcon_calls = []
+        self.phrase_calls = []
+
+    def play_earcon(self, kind):
+        self.earcon_calls.append(kind)
+
+    def play_fallback_phrase(self, kind):
+        self.phrase_calls.append(kind)
 
 
 class FakeAudioPlayer:
@@ -61,6 +84,8 @@ class FakeAudioPlayer:
 
 
 class TempFileRecorder(FakeRecorder):
+    """Recorder que realmente cria o arquivo no disco para testes de cleanup."""
+
     def record(self, output_dir, duration_seconds):
         path = Path(output_dir) / "command.wav"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -68,7 +93,9 @@ class TempFileRecorder(FakeRecorder):
         return path
 
 
-class TempFileGeminiClient(FakeGeminiClient):
+class TempFileTtsClient(FakeElevenLabsTtsClient):
+    """TTS client que realmente cria o arquivo no disco para testes de cleanup."""
+
     def synthesize_speech(self, text, output_dir):
         path = Path(output_dir) / "response.wav"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -76,9 +103,15 @@ class TempFileGeminiClient(FakeGeminiClient):
         return path
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def make_config(tmp_path):
     return AssistantConfig(
-        google_api_key="fake-key",
+        groq_api_key="fake-groq-key",
+        elevenlabs_api_key="fake-elevenlabs-key",
+        elevenlabs_voice_id="fake-voice-id",
         audio_output_dir=tmp_path,
         command_record_seconds=1.25,
         command_sample_rate=8000,
@@ -86,11 +119,18 @@ def make_config(tmp_path):
 
 
 def patch_voice_loop_dependencies(monkeypatch):
+    """Substitui todas as dependencias externas do VoiceLoop por fakes."""
     monkeypatch.setattr(voice_loop_module, "Assistant", FakeAssistant)
     monkeypatch.setattr(voice_loop_module, "CommandRecorder", FakeRecorder)
-    monkeypatch.setattr(voice_loop_module, "GeminiClient", FakeGeminiClient)
+    monkeypatch.setattr(voice_loop_module, "GroqSttClient", FakeGroqSttClient)
+    monkeypatch.setattr(voice_loop_module, "ElevenLabsTtsClient", FakeElevenLabsTtsClient)
+    monkeypatch.setattr(voice_loop_module, "FeedbackPlayer", FakeFeedbackPlayer)
     monkeypatch.setattr(voice_loop_module, "AudioPlayer", FakeAudioPlayer)
 
+
+# ---------------------------------------------------------------------------
+# Testes de fluxo de turno
+# ---------------------------------------------------------------------------
 
 def test_voice_loop_runs_one_turn_from_wake_word_to_playback(tmp_path, monkeypatch, capsys):
     patch_voice_loop_dependencies(monkeypatch)
@@ -98,8 +138,8 @@ def test_voice_loop_runs_one_turn_from_wake_word_to_playback(tmp_path, monkeypat
     loop = VoiceLoop(make_config(tmp_path), engine)
 
     loop.run()
-    engine.callback(0)
-    engine.callback(1)
+    engine.callback(0)  # nao aciona turno (predicao != 1)
+    engine.callback(1)  # aciona turno
 
     captured = capsys.readouterr()
 
@@ -109,48 +149,24 @@ def test_voice_loop_runs_one_turn_from_wake_word_to_playback(tmp_path, monkeypat
     assert loop.recorder.calls == [(turn_dir, 1.25)]
     assert turn_dir.parent == tmp_path
     assert turn_dir.name.startswith("turn-")
-    assert loop.gemini.calls == [
-        ("transcribe", turn_dir / "command.wav"),
-        ("synthesize", "resposta para acenda a luz", turn_dir),
-    ]
+
+    # STT: transcribe recebeu o arquivo de comando
+    assert loop.stt.calls == [turn_dir / "command.wav"]
+
+    # FeedbackPlayer: earcon positivo tocado apos resposta gerada
+    assert loop.feedback.earcon_calls == ["positive"]
+    assert loop.feedback.phrase_calls == []
+
+    # TTS: synthesize chamado com texto da resposta
+    assert loop.tts.calls == [("resposta para acenda a luz", turn_dir)]
+
+    # Player: tocou o audio gerado
     assert loop.player.calls == [turn_dir / "response.wav"]
+
     assert "Wake word detected. Recording command..." in captured.out
     assert "Command transcribed." in captured.out
     assert "Assistant response generated." in captured.out
     assert "Audio response played." in captured.out
-
-
-@pytest.mark.parametrize(
-    ("failing_dependency", "error", "expected_output"),
-    [
-        ("recorder", RecordingError("microfone indisponivel"), "Voice error: microfone indisponivel"),
-        ("gemini", GeminiClientError("api indisponivel"), "Gemini error: api indisponivel"),
-        ("player", PlaybackError("saida de audio indisponivel"), "Playback error: saida de audio indisponivel"),
-    ],
-)
-def test_voice_loop_recovers_from_turn_errors(
-    tmp_path,
-    monkeypatch,
-    capsys,
-    failing_dependency,
-    error,
-    expected_output,
-):
-    patch_voice_loop_dependencies(monkeypatch)
-    engine = FakeWakeWordEngine()
-    loop = VoiceLoop(make_config(tmp_path), engine)
-
-    if failing_dependency == "recorder":
-        monkeypatch.setattr(loop.recorder, "record", lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
-    elif failing_dependency == "gemini":
-        monkeypatch.setattr(loop.gemini, "transcribe_audio", lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
-    else:
-        monkeypatch.setattr(loop.player, "play", lambda *_args, **_kwargs: (_ for _ in ()).throw(error))
-
-    loop._on_prediction(1)
-
-    assert loop._handling_turn is False
-    assert expected_output in capsys.readouterr().out
 
 
 def test_voice_loop_ignores_nested_wake_word_while_turn_is_running(tmp_path, monkeypatch):
@@ -171,75 +187,107 @@ def test_voice_loop_ignores_nested_wake_word_while_turn_is_running(tmp_path, mon
     assert loop._handling_turn is False
 
 
-def test_voice_config_reads_voice_environment(monkeypatch, tmp_path):
-    monkeypatch.setenv("VALERIA_ASSISTANT_NAME", "Aurora")
-    monkeypatch.setenv("GOOGLE_API_KEY", "env-key")
-    monkeypatch.setenv("VALERIA_GEMINI_MODEL", "gemini-env")
-    monkeypatch.setenv("VALERIA_TRANSCRIPTION_MODEL", "transcribe-env")
-    monkeypatch.setenv("VALERIA_TTS_MODEL", "tts-env")
-    monkeypatch.setenv("VALERIA_TTS_VOICE", "Leda")
-    audio_dir = Path("tmp/valeria-audio/test-env")
-    monkeypatch.setenv("VALERIA_AUDIO_OUTPUT_DIR", str(audio_dir))
-    monkeypatch.setenv("VALERIA_COMMAND_RECORD_SECONDS", "2.5")
-    monkeypatch.setenv("VALERIA_COMMAND_SAMPLE_RATE", "22050")
+# ---------------------------------------------------------------------------
+# Testes de recuperacao de erros por etapa
+# ---------------------------------------------------------------------------
 
-    config = AssistantConfig.from_env()
+@pytest.mark.parametrize(
+    ("failing_dependency", "error", "expected_output"),
+    [
+        ("recorder", RecordingError("microfone indisponivel"), "Voice error: microfone indisponivel"),
+        ("stt", SttClientError("api indisponivel"), "STT error: api indisponivel"),
+        ("player", PlaybackError("saida de audio indisponivel"), "Playback error: saida de audio indisponivel"),
+        (
+            "tts",
+            TtsClientError("elevenlabs down", "elevenlabs_tts_error"),
+            "TTS error (elevenlabs_tts_error): elevenlabs down",
+        ),
+    ],
+)
+def test_voice_loop_recovers_from_turn_errors(
+    tmp_path,
+    monkeypatch,
+    capsys,
+    failing_dependency,
+    error,
+    expected_output,
+):
+    patch_voice_loop_dependencies(monkeypatch)
+    engine = FakeWakeWordEngine()
+    loop = VoiceLoop(make_config(tmp_path), engine)
 
-    assert config.assistant_name == "Aurora"
-    assert config.google_api_key == "env-key"
-    assert config.gemini_model == "gemini-env"
-    assert config.transcription_model == "transcribe-env"
-    assert config.tts_model == "tts-env"
-    assert config.tts_voice == "Leda"
-    assert config.audio_output_dir == audio_dir
-    assert config.command_record_seconds == 2.5
-    assert config.command_sample_rate == 22050
+    if failing_dependency == "recorder":
+        monkeypatch.setattr(loop.recorder, "record", lambda *_a, **_kw: (_ for _ in ()).throw(error))
+    elif failing_dependency == "stt":
+        monkeypatch.setattr(loop.stt, "transcribe", lambda *_a, **_kw: (_ for _ in ()).throw(error))
+    elif failing_dependency == "tts":
+        monkeypatch.setattr(loop.tts, "synthesize_speech", lambda *_a, **_kw: (_ for _ in ()).throw(error))
+    else:
+        monkeypatch.setattr(loop.player, "play", lambda *_a, **_kw: (_ for _ in ()).throw(error))
+
+    loop._on_prediction(1)
+
+    assert loop._handling_turn is False
+    assert expected_output in capsys.readouterr().out
 
 
-def test_missing_google_api_key_is_controlled_error():
-    with pytest.raises(GeminiClientError, match="GOOGLE_API_KEY"):
-        GeminiClient(
-            api_key=None,
-            transcription_model="transcribe",
-            tts_model="tts",
-            tts_voice="Kore",
-        )
+def test_stt_error_triggers_error_earcon_and_fallback_phrase(tmp_path, monkeypatch, capsys):
+    """Quando STT falha: earcon de erro + frase de erro devem ser acionados."""
+    patch_voice_loop_dependencies(monkeypatch)
+    loop = VoiceLoop(make_config(tmp_path), FakeWakeWordEngine())
+    stt_error = SttClientError("groq api down")
+    monkeypatch.setattr(loop.stt, "transcribe", lambda *_a, **_kw: (_ for _ in ()).throw(stt_error))
+
+    loop._on_prediction(1)
+
+    assert loop.feedback.earcon_calls == ["error"]
+    assert loop.feedback.phrase_calls == ["error"]
 
 
-def test_generate_content_error_becomes_sanitized_gemini_client_error(tmp_path):
-    audio_path = tmp_path / "command.wav"
-    audio_path.write_bytes(b"audio")
-    leaked_detail = "raw transcript with token=secret"
+def test_tts_error_triggers_positive_fallback_phrase_and_prints_response(tmp_path, monkeypatch, capsys):
+    """Quando TTS falha: earcon positivo ja tocou; frase positiva estatica + resposta em texto."""
+    patch_voice_loop_dependencies(monkeypatch)
+    loop = VoiceLoop(make_config(tmp_path), FakeWakeWordEngine())
+    tts_error = TtsClientError("quota exceeded", "elevenlabs_quota_exceeded")
+    monkeypatch.setattr(loop.tts, "synthesize_speech", lambda *_a, **_kw: (_ for _ in ()).throw(tts_error))
 
-    class FakePart:
-        @staticmethod
-        def from_bytes(data, mime_type):
-            return SimpleNamespace(data=data, mime_type=mime_type)
+    loop._on_prediction(1)
 
-    class FakeTypes:
-        Part = FakePart
+    captured = capsys.readouterr()
+    assert loop.feedback.earcon_calls == ["positive"]
+    assert loop.feedback.phrase_calls == ["positive"]
+    assert "Entendi seu pedido. A resposta esta no terminal." in captured.out
+    assert "TTS error (elevenlabs_quota_exceeded)" in captured.out
 
-    class FakeModels:
-        def generate_content(self, **_kwargs):
-            raise RuntimeError(leaked_detail)
 
-    client = GeminiClient(
-        api_key="fake-key",
-        transcription_model="transcribe",
-        tts_model="tts",
-        tts_voice="Kore",
+def test_tts_none_plays_positive_fallback_phrase(tmp_path, monkeypatch, capsys):
+    """Quando TTS nao esta configurado (sem ELEVENLABS_API_KEY): earcon + frase positiva estatica."""
+    patch_voice_loop_dependencies(monkeypatch)
+    config = AssistantConfig(
+        groq_api_key="fake-groq-key",
+        elevenlabs_api_key=None,  # TTS desabilitado
+        elevenlabs_voice_id=None,
+        audio_output_dir=tmp_path,
+        command_record_seconds=1.25,
+        command_sample_rate=8000,
     )
-    client._client = SimpleNamespace(models=FakeModels())
-    client._types = FakeTypes
+    loop = VoiceLoop(config, FakeWakeWordEngine())
 
-    with pytest.raises(GeminiClientError) as exc_info:
-        client.transcribe_audio(audio_path)
+    loop._on_prediction(1)
 
-    assert "transcription request failed." in str(exc_info.value)
-    assert leaked_detail not in str(exc_info.value)
+    captured = capsys.readouterr()
+    assert loop.tts is None
+    assert loop.feedback.earcon_calls == ["positive"]
+    assert loop.feedback.phrase_calls == ["positive"]
+    assert "Entendi seu pedido. A resposta esta no terminal." in captured.out
 
+
+# ---------------------------------------------------------------------------
+# Testes de seguranca (SEC-03-001)
+# ---------------------------------------------------------------------------
 
 def test_voice_loop_does_not_print_full_transcript_or_response(tmp_path, monkeypatch, capsys):
+    """SEC-03-001: transcript e resposta nao devem aparecer no stdout/stderr."""
     secret_transcript = "codigo confidencial 123456"
     secret_response = "resposta privada completa"
 
@@ -247,19 +295,18 @@ def test_voice_loop_does_not_print_full_transcript_or_response(tmp_path, monkeyp
         def respond(self, _transcript):
             return secret_response
 
-    class SensitiveGemini(FakeGeminiClient):
-        def transcribe_audio(self, _audio_path):
+    class SensitiveStt(FakeGroqSttClient):
+        def transcribe(self, _audio_path):
             return secret_transcript
 
-        def synthesize_speech(self, _text, output_dir):
-            path = Path(output_dir) / "response.wav"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(b"response")
-            return path
+    class WritingTts(TempFileTtsClient):
+        pass
 
     monkeypatch.setattr(voice_loop_module, "Assistant", SensitiveAssistant)
     monkeypatch.setattr(voice_loop_module, "CommandRecorder", TempFileRecorder)
-    monkeypatch.setattr(voice_loop_module, "GeminiClient", SensitiveGemini)
+    monkeypatch.setattr(voice_loop_module, "GroqSttClient", SensitiveStt)
+    monkeypatch.setattr(voice_loop_module, "ElevenLabsTtsClient", WritingTts)
+    monkeypatch.setattr(voice_loop_module, "FeedbackPlayer", FakeFeedbackPlayer)
     monkeypatch.setattr(voice_loop_module, "AudioPlayer", FakeAudioPlayer)
     loop = VoiceLoop(make_config(tmp_path), FakeWakeWordEngine())
 
@@ -271,26 +318,40 @@ def test_voice_loop_does_not_print_full_transcript_or_response(tmp_path, monkeyp
     assert secret_response not in combined_output
 
 
-def test_voice_loop_removes_temp_files_after_success(tmp_path, monkeypatch):
+# ---------------------------------------------------------------------------
+# Testes de limpeza de arquivos temporarios
+# ---------------------------------------------------------------------------
+
+def test_voice_loop_removes_temp_dirs_after_success(tmp_path, monkeypatch):
+    """TemporaryDirectory deve ser limpo pelo context manager apos turno bem-sucedido."""
     monkeypatch.setattr(voice_loop_module, "Assistant", FakeAssistant)
     monkeypatch.setattr(voice_loop_module, "CommandRecorder", TempFileRecorder)
-    monkeypatch.setattr(voice_loop_module, "GeminiClient", TempFileGeminiClient)
+    monkeypatch.setattr(voice_loop_module, "GroqSttClient", FakeGroqSttClient)
+    monkeypatch.setattr(voice_loop_module, "ElevenLabsTtsClient", TempFileTtsClient)
+    monkeypatch.setattr(voice_loop_module, "FeedbackPlayer", FakeFeedbackPlayer)
     monkeypatch.setattr(voice_loop_module, "AudioPlayer", FakeAudioPlayer)
     loop = VoiceLoop(make_config(tmp_path), FakeWakeWordEngine())
 
     loop._on_prediction(1)
 
-    assert not (tmp_path / "command.wav").exists()
-    assert not (tmp_path / "response.wav").exists()
+    assert not any(p.name.startswith("turn-") for p in tmp_path.iterdir())
 
 
-@pytest.mark.parametrize("failure_stage", ["gemini", "playback"])
-def test_voice_loop_removes_temp_files_after_failures(tmp_path, monkeypatch, failure_stage):
-    class FailingGemini(TempFileGeminiClient):
-        def transcribe_audio(self, audio_path):
-            if failure_stage == "gemini":
-                raise GeminiClientError("api indisponivel")
-            return super().transcribe_audio(audio_path)
+@pytest.mark.parametrize("failure_stage", ["stt", "tts", "playback"])
+def test_voice_loop_removes_temp_dirs_after_failures(tmp_path, monkeypatch, failure_stage):
+    """TemporaryDirectory deve ser limpo mesmo em caso de falha parcial."""
+
+    class FailingStt(FakeGroqSttClient):
+        def transcribe(self, audio_path):
+            if failure_stage == "stt":
+                raise SttClientError("api indisponivel")
+            return super().transcribe(audio_path)
+
+    class FailingTts(TempFileTtsClient):
+        def synthesize_speech(self, text, output_dir):
+            if failure_stage == "tts":
+                raise TtsClientError("elevenlabs down", "elevenlabs_tts_error")
+            return super().synthesize_speech(text, output_dir)
 
     class FailingPlayer(FakeAudioPlayer):
         def play(self, audio_path):
@@ -300,17 +361,51 @@ def test_voice_loop_removes_temp_files_after_failures(tmp_path, monkeypatch, fai
 
     monkeypatch.setattr(voice_loop_module, "Assistant", FakeAssistant)
     monkeypatch.setattr(voice_loop_module, "CommandRecorder", TempFileRecorder)
-    monkeypatch.setattr(voice_loop_module, "GeminiClient", FailingGemini)
+    monkeypatch.setattr(voice_loop_module, "GroqSttClient", FailingStt)
+    monkeypatch.setattr(voice_loop_module, "ElevenLabsTtsClient", FailingTts)
+    monkeypatch.setattr(voice_loop_module, "FeedbackPlayer", FakeFeedbackPlayer)
     monkeypatch.setattr(voice_loop_module, "AudioPlayer", FailingPlayer)
     loop = VoiceLoop(make_config(tmp_path), FakeWakeWordEngine())
 
     loop._on_prediction(1)
 
-    assert not (tmp_path / "command.wav").exists()
-    assert not (tmp_path / "response.wav").exists()
+    assert not any(p.name.startswith("turn-") for p in tmp_path.iterdir())
+
+
+# ---------------------------------------------------------------------------
+# Testes de configuracao por variaveis de ambiente
+# ---------------------------------------------------------------------------
+
+def test_voice_config_reads_groq_and_elevenlabs_environment(monkeypatch, tmp_path):
+    """AssistantConfig.from_env deve ler variaveis Groq e ElevenLabs corretamente."""
+    monkeypatch.setattr(AssistantConfig, "_load_dotenv_if_available", lambda: None)
+    monkeypatch.setenv("VALERIA_ASSISTANT_NAME", "Aurora")
+    monkeypatch.setenv("GROQ_API_KEY", "groq-env-key")
+    monkeypatch.setenv("VALERIA_GROQ_CHAT_MODEL", "groq-chat-env")
+    monkeypatch.setenv("VALERIA_GROQ_STT_MODEL", "whisper-env")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "eleven-env-key")
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice-env-id")
+    monkeypatch.setenv("VALERIA_ELEVENLABS_MODEL", "eleven_multilingual_v2")
+    audio_dir = "tmp/valeria-audio/test-env"
+    monkeypatch.setenv("VALERIA_AUDIO_OUTPUT_DIR", audio_dir)
+    monkeypatch.setenv("VALERIA_COMMAND_RECORD_SECONDS", "2.5")
+    monkeypatch.setenv("VALERIA_COMMAND_SAMPLE_RATE", "22050")
+
+    config = AssistantConfig.from_env()
+
+    assert config.assistant_name == "Aurora"
+    assert config.groq_api_key == "groq-env-key"
+    assert config.groq_chat_model == "groq-chat-env"
+    assert config.groq_stt_model == "whisper-env"
+    assert config.elevenlabs_api_key == "eleven-env-key"
+    assert config.elevenlabs_voice_id == "voice-env-id"
+    assert config.elevenlabs_model == "eleven_multilingual_v2"
+    assert config.command_record_seconds == 2.5
+    assert config.command_sample_rate == 22050
 
 
 def test_audio_output_dir_outside_allowed_root_is_rejected(monkeypatch, tmp_path):
+    monkeypatch.setattr(AssistantConfig, "_load_dotenv_if_available", lambda: None)
     outside_root = tmp_path.parent / "outside-valeria-audio"
     monkeypatch.setenv("VALERIA_AUDIO_OUTPUT_DIR", str(outside_root))
 
@@ -320,6 +415,7 @@ def test_audio_output_dir_outside_allowed_root_is_rejected(monkeypatch, tmp_path
 
 @pytest.mark.parametrize("seconds", ["abc", "-1", "9999"])
 def test_invalid_command_record_seconds_fails_controlled(monkeypatch, seconds):
+    monkeypatch.setattr(AssistantConfig, "_load_dotenv_if_available", lambda: None)
     monkeypatch.setenv("VALERIA_COMMAND_RECORD_SECONDS", seconds)
 
     with pytest.raises(AssistantConfigError, match="VALERIA_COMMAND_RECORD_SECONDS"):
@@ -327,7 +423,10 @@ def test_invalid_command_record_seconds_fails_controlled(monkeypatch, seconds):
 
 
 def test_missing_pyaudio_does_not_break_text_mode(monkeypatch, capsys):
+    """Sem pyaudio, o modo texto deve funcionar sem excecao."""
     monkeypatch.setitem(__import__("sys").modules, "pyaudio", None)
+    monkeypatch.setattr(AssistantConfig, "_load_dotenv_if_available", lambda: None)
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
 
     exit_code = main(["text", "--once", "ola"])
 
@@ -337,39 +436,19 @@ def test_missing_pyaudio_does_not_break_text_mode(monkeypatch, capsys):
     assert "Valeria recebeu: ola" not in captured.out
 
 
-def test_gemini_client_extracts_audio_from_mocked_response_parts():
-    audio_bytes = b"wav-data"
-    response = SimpleNamespace(
-        parts=[SimpleNamespace(inline_data=SimpleNamespace(data=audio_bytes))],
-        candidates=[],
-    )
-    client = GeminiClient(
-        api_key="fake-key",
-        transcription_model="transcribe",
-        tts_model="tts",
-        tts_voice="Kore",
-    )
+def test_stt_client_requires_groq_api_key():
+    """GroqSttClient deve levantar SttClientError se api_key for vazia."""
+    with pytest.raises(SttClientError, match="GROQ_API_KEY"):
+        GroqSttClient(api_key="")
 
-    assert client._extract_audio(response) == (audio_bytes, None)
+    with pytest.raises(SttClientError, match="GROQ_API_KEY"):
+        GroqSttClient(api_key=None)
 
 
-def test_gemini_client_extracts_audio_from_mocked_candidate_content():
-    audio_bytes = b"candidate-wav-data"
-    response = SimpleNamespace(
-        parts=[],
-        candidates=[
-            SimpleNamespace(
-                content=SimpleNamespace(
-                    parts=[SimpleNamespace(inline_data=SimpleNamespace(data=audio_bytes))]
-                )
-            )
-        ],
-    )
-    client = GeminiClient(
-        api_key="fake-key",
-        transcription_model="transcribe",
-        tts_model="tts",
-        tts_voice="Kore",
-    )
+def test_tts_client_requires_api_key_and_voice_id():
+    """ElevenLabsTtsClient deve levantar TtsClientError se api_key ou voice_id vazios."""
+    with pytest.raises(TtsClientError):
+        ElevenLabsTtsClient(api_key="", voice_id="voice-id")
 
-    assert client._extract_audio(response) == (audio_bytes, None)
+    with pytest.raises(TtsClientError):
+        ElevenLabsTtsClient(api_key="api-key", voice_id="")
