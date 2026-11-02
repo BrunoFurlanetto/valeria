@@ -8,10 +8,10 @@
 ## Projeto
 
 **Nome:** valeria
-**Descrição:** Assistente virtual com detecção de wake-word via LSTM + integração Google Generative AI (Gemini)
-**Stack:** Python 3.10+ · PyTorch · Google Generative AI · PyAudio
+**Descrição:** Assistente virtual com detecção de wake-word via LSTM + Groq (chat+STT) + ElevenLabs (TTS)
+**Stack:** Python 3.12+ · PyTorch · Groq · ElevenLabs · PyAudio
 **Repositório:** https://github.com/BrunoFurlanetto/valeria.git
-**Ambiente local:** `python -m app.assistant text` ou `python -m app.assistant run` (requer `GOOGLE_API_KEY` no `.env`)
+**Ambiente local:** `python -m app.assistant text` ou `python -m app.assistant run` (requer `GROQ_API_KEY` no `.env`)
 
 ---
 
@@ -69,9 +69,11 @@ O orchestrator sempre pergunta a branch base antes de criar qualquer branch nova
 # Instalar dependências
 pip install -r app/requirements.txt
 
-# Assistente (entry point principal)
+# Assistente em modo texto
 python -m app.assistant text
-python -m app.assistant run
+
+# Assistente em modo voz (com wake-word)
+python -m app.assistant run --model-file app/network/save_model/valeria_optimized.zip
 
 # Treinar modelo wake-word
 python app/network/training.py \
@@ -88,12 +90,18 @@ python app/network/optimized_model.py \
 # Executar inferência wake-word
 python app/network/exec.py \
   --model_file app/network/save_model/valeria_optimized.zip
+
+# Regenerar áudios estáticos (earcons + frases de fallback)
+python scripts/generate_static_audio.py
 ```
 
 ## Testes
 
-Sem suite formal ainda. Validação manual:
-- Mudanças no modelo → rodar `training.py` em dataset reduzido
+```bash
+python -m pytest -q
+```
+
+- Mudanças no modelo wake-word → rodar `training.py` em dataset reduzido
 - Mudanças na inferência → rodar `exec.py` com modelo known-good
 - Novos módulos → criar `tests/` com `pytest`
 
@@ -127,4 +135,6 @@ Tipos válidos: feat, fix, refactor, test, docs, chore, perf, style
 - Módulos focados: pipeline de dados em `utils/`, modelo/runtime em `network/`
 
 ### Variáveis de ambiente obrigatórias
-- `GOOGLE_API_KEY` — chave da API Google Generative AI (Gemini)
+- `GROQ_API_KEY` — chave da API Groq (chat gpt-oss-20b + STT whisper-large-v3-turbo)
+- `ELEVENLABS_API_KEY` — chave da API ElevenLabs (TTS eleven_flash_v2_5); opcional — sem ela usa fallback estático
+- `ELEVENLABS_VOICE_ID` — ID da voz ElevenLabs; necessário se ELEVENLABS_API_KEY estiver presente
