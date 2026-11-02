@@ -31,6 +31,7 @@ class EventLogger:
             "input_length",
             "response_length",
             "history_size",
+            "tokens_used",
         ):
             if key in event:
                 safe[key] = self._safe_value(event[key])
